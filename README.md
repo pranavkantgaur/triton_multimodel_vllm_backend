@@ -49,6 +49,49 @@ least-recently-used (LRU) model when a new one is requested.
 
 ---
 
+## Why Triton? Design rationale and tradeoffs
+
+### The alternative: managing vLLM processes directly
+
+The obvious simpler approach is to skip Triton and instead spin up one
+`vllm serve` subprocess per model, starting a new process when a model is
+requested and killing it when VRAM is needed elsewhere.  This is a valid
+design and has a real advantage: the [OpenAI-compatible REST
+API](https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html)
+built into `vllm serve` works out of the box with standard LLM client
+libraries.
+
+### Why Triton is still the better fit here
+
+| Concern | With Triton + vLLM backend | vLLM processes only |
+|---|---|---|
+| **Load / unload without restart** | `POST /v2/repository/models/{name}/load\|unload` on the *running* server; fast and clean | Must `kill` and re-`spawn` a full Python process; slower, risks port leaks |
+| **Single endpoint** | One gRPC+HTTP address for all models | Each model runs on its own port; clients must track which port each model is on |
+| **GPU memory release** | Triton + vLLM cooperate to free GPU context on unload; verified by the `is_model_ready` check | Memory is freed only after the OS collects the dead process; timing is non-deterministic |
+| **Metrics & observability** | Triton exposes a unified Prometheus metrics endpoint covering all loaded models plus per-model vLLM stats | Each vLLM server has its own metrics endpoint; aggregation requires extra tooling |
+| **Request queuing & health** | Triton handles per-model request queuing, health probes, and graceful draining | Requires custom logic or a process supervisor |
+| **Production readiness** | Battle-tested NVIDIA runtime used in large-scale deployments | Growing but newer for on-prem, multi-model routing scenarios |
+
+### Tradeoffs of using Triton
+
+Triton does add complexity: the stack has more moving parts (Triton container,
+vLLM backend plugin, manager service) compared to launching bare `vllm serve`
+processes.  Clients must also use the KServe v2 inference protocol (or Triton's
+`generate` extension endpoint) instead of the OpenAI-compatible API that many
+libraries already support natively.
+
+### Summary verdict
+
+For **VRAM-constrained on-prem setups** where models must be swapped in and
+out cleanly at runtime, Triton's `--model-control-mode=explicit` API offers
+the most reliable and operationally predictable approach.  The programmatic
+load/unload lifecycle, unified endpoint, and built-in metrics outweigh the
+added complexity.  If OpenAI-client compatibility is the primary concern and
+operational simplicity is preferred over observability, a pure `vllm serve`
+process-management approach is a reasonable alternative.
+
+---
+
 ## Prerequisites
 
 - NVIDIA GPU(s) with adequate VRAM (e.g. A100 80 GB, RTX 4090 24 GB)
