@@ -1,0 +1,75 @@
+# docker-compose.yml – Bring up Triton + multi-model manager together.
+#
+# Prerequisites
+# -------------
+# 1. NVIDIA Container Toolkit installed on the host.
+# 2. LLM weights downloaded from HuggingFace to HF_MODELS_ROOT (default: /data/models).
+# 3. Run  `python scripts/setup_model_repo.py`  to (re)generate model_repository/.
+#
+# Usage
+# -----
+#   HF_MODELS_ROOT=/data/models TRITON_VERSION=24.10 docker compose up
+#
+# Override defaults via environment variables or a .env file.
+
+version: "3.9"
+
+x-defaults: &defaults
+  restart: unless-stopped
+
+services:
+  triton:
+    <<: *defaults
+    image: "nvcr.io/nvidia/tritonserver:${TRITON_VERSION:-24.10}-vllm-python-py3"
+    command:
+      - tritonserver
+      - --model-repository=/model_repository
+      # explicit mode: no model is loaded at startup; the manager loads on demand.
+      - --model-control-mode=explicit
+      - --log-verbose=1
+    ports:
+      - "${HTTP_PORT:-8000}:8000"
+      - "${GRPC_PORT:-8001}:8001"
+      - "${METRICS_PORT:-8002}:8002"
+    volumes:
+      - "${PWD}/model_repository:/model_repository:ro"
+      - "${HF_MODELS_ROOT:-/data/models}:/models:ro"
+    shm_size: "2gb"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v2/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  manager:
+    <<: *defaults
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - MANAGER_CONFIG=/app/config/models.yaml
+      - UNLOAD_ON_SHUTDOWN=false
+    ports:
+      - "${MANAGER_PORT:-8080}:8080"
+    volumes:
+      - "${PWD}/config:/app/config:ro"
+    depends_on:
+      triton:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

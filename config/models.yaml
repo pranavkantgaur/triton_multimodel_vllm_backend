@@ -1,0 +1,51 @@
+# Configuration for available LLM models and system resources.
+# 
+# Each model entry must specify:
+#   model_path       - Absolute path to the downloaded HuggingFace weights directory
+#   vram_gb          - Estimated peak VRAM (in GiB) consumed by this model
+#   tensor_parallel_size - Number of GPUs for tensor-parallel sharding (default: 1)
+#   gpu_memory_utilization - Fraction of GPU memory vllm is allowed to use (default: 0.85)
+#   enforce_eager    - Disable CUDA graph capture (slower but lower peak VRAM)
+#
+# The model_path is used both inside the container (container_path) and on the host
+# (host_path).  Override host_path to match your local filesystem layout.
+
+models:
+  llama3-8b:
+    model_path: /models/llama3-8b       # path inside Triton container
+    vram_gb: 16
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    enforce_eager: false
+    description: "Meta LLaMA-3 8B"
+
+  mistral-7b:
+    model_path: /models/mistral-7b
+    vram_gb: 14
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    enforce_eager: false
+    description: "Mistral 7B v0.3"
+
+  phi3-mini:
+    model_path: /models/phi3-mini
+    vram_gb: 8
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    enforce_eager: false
+    description: "Microsoft Phi-3 Mini 3.8B"
+
+triton:
+  # HTTP and gRPC endpoints of the running Triton server.
+  http_url: "http://localhost:8000"
+  grpc_url: "localhost:8001"
+  # Absolute path to the model repository *inside* the container.
+  model_repository: "/model_repository"
+
+resources:
+  # Total VRAM available across all GPUs (GiB).
+  # The manager will refuse to load a model if doing so would exceed
+  # (total_vram_gb - reserved_vram_gb).
+  total_vram_gb: 24
+  # VRAM to keep free as overhead / buffer.
+  reserved_vram_gb: 2

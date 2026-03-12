@@ -1,0 +1,13 @@
+# Triton model configuration for the vLLM backend.
+# No fields need to be changed here; all model-specific settings are
+# controlled via 1/model.json.
+
+backend: "vllm"
+
+# Defers device/GPU allocation to the vLLM engine.
+instance_group [
+  {
+    count: 1
+    kind: KIND_MODEL
+  }
+]

@@ -1,0 +1,7 @@
+{
+    "model": "/models/llama3-8b",
+    "gpu_memory_utilization": 0.85,
+    "tensor_parallel_size": 1,
+    "enforce_eager": false,
+    "disable_log_requests": true
+}
